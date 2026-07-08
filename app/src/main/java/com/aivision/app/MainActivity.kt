@@ -168,6 +168,12 @@ class MainActivity : AppCompatActivity() {
         })
     }
     
+    override fun onDestroy() {
+        super.onDestroy()
+        analysisJob?.cancel()
+        timerJob?.cancel()
+    }
+
     override fun onSaveInstanceState(outState: android.os.Bundle) {
         super.onSaveInstanceState(outState)
         if (selectedImageUris.isNotEmpty()) {
@@ -708,12 +714,31 @@ class MainActivity : AppCompatActivity() {
         
         val outputStream = ByteArrayOutputStream()
         resized.compress(Bitmap.CompressFormat.JPEG, 85, outputStream)
+        
+        if (resized != bitmap) {
+            resized.recycle()
+        }
+        bitmap.recycle()
+        
         return Base64.encodeToString(outputStream.toByteArray(), Base64.NO_WRAP)
     }
     
+    private fun getBitmapFromUri(uri: Uri): Bitmap {
+        return if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+            val source = android.graphics.ImageDecoder.createSource(contentResolver, uri)
+            android.graphics.ImageDecoder.decodeBitmap(source) { decoder, _, _ ->
+                decoder.allocator = android.graphics.ImageDecoder.ALLOCATOR_SOFTWARE
+                decoder.isMutableRequired = true
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            MediaStore.Images.Media.getBitmap(contentResolver, uri)
+        }
+    }
+
     private suspend fun analyzeMultipleImages(apiKey: String, uris: List<Uri>, customPrompt: String): String = withContext(Dispatchers.IO) {
         if (uris.size == 1) {
-            val bitmap = MediaStore.Images.Media.getBitmap(contentResolver, uris[0])
+            val bitmap = getBitmapFromUri(uris[0])
             val base64 = bitmapToBase64(bitmap)
             return@withContext callPollinationsAPI(apiKey, base64, customPrompt)
         }
@@ -721,7 +746,7 @@ class MainActivity : AppCompatActivity() {
         // Process all images in parallel
         val jobs = uris.mapIndexed { index, uri ->
             async {
-                val bitmap = MediaStore.Images.Media.getBitmap(contentResolver, uri)
+                val bitmap = getBitmapFromUri(uri)
                 val base64 = bitmapToBase64(bitmap)
                 val prompt = if (customPrompt.isEmpty()) "Describe the image" else customPrompt
                 val result = callPollinationsAPI(apiKey, base64, prompt)
