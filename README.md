@@ -5,6 +5,9 @@ AI-powered image analysis for Android using multiple state-of-the-art models.
 ## Features
 
 - 🖼️ **Batch Image Analysis** - Process multiple images simultaneously with parallel processing
+- 🚀 **Zero Memory Leaks** - Aggressive Bitmap recycling prevents `OutOfMemoryErrors` even when analyzing dozens of ultra-high-resolution gallery images simultaneously
+- 🔋 **Zero Battery Drain** - Background coroutine jobs and UI timers are aggressively killed upon app closure, strictly preserving device battery
+- 🛠️ **Modern Image Decoding** - Automatically utilizes `ImageDecoder` on API 28+ devices with hardware-acceleration safeties, gracefully falling back to `MediaStore` on older devices
 - 🤖 **Dynamic Model Sync** - Automatically fetches and syncs the latest available vision models natively from Pollinations API or your custom provider's endpoint
 - 🎨 **Custom AI Providers** - Built-in support to optionally override the Base URL and intelligently sync models and analyze images with any OpenAI-compatible provider
 - ✍️ **Custom Prompts** - Add your own prompts to tailor the analysis
