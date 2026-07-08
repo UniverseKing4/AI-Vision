@@ -47,11 +47,6 @@ jobs:
           APK_FILE=$(ls app-release*.apk | head -1)
           mv "$APK_FILE" AIVision-v${{ steps.version.outputs.number }}.apk
         
-      - uses: actions/upload-artifact@v4
-        with:
-          name: app-release
-          path: app/build/outputs/apk/release/AIVision-*.apk
-
       - uses: softprops/action-gh-release@v2
         if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
         with:
