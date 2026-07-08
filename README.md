@@ -5,42 +5,41 @@ AI-powered image analysis for Android using multiple state-of-the-art models.
 ## Features
 
 - 🖼️ **Batch Image Analysis** - Process multiple images simultaneously with parallel processing
-- 🤖 **Multiple AI Models** - Choose from OpenAI, Gemini Flash, Claude Fast, Kimi, or Polly
+- 🤖 **Dynamic Model Sync** - Automatically fetches and syncs the latest available vision models natively from Pollinations API or your custom provider's endpoint
+- 🎨 **Custom AI Providers** - Built-in support to optionally override the Base URL and intelligently sync models and analyze images with any OpenAI-compatible provider
 - ✍️ **Custom Prompts** - Add your own prompts to tailor the analysis
 - 🎨 **Material Design 3** - Modern, clean UI with dark/light theme support
 - 📋 **Quick Copy** - One-tap copy results to clipboard
 - ⏱️ **Real-time Timer** - Track analysis duration with live updates
 - 🛑 **Stop Analysis** - Cancel ongoing analysis anytime
 - 🔄 **State Preservation** - Resume analysis after app restart or configuration changes
-- 🔒 **Secure API Proxy** - API keys encrypted via Cloudflare Workers
+- 💰 **Balance Checker** - Check Pollinations API balance directly from the settings dialog (hides automatically if using a custom Base URL)
 
-## Getting Started
+## Available Models
 
-### Option 1: Use Default API (No Setup)
+The app natively and dynamically syncs all available vision models directly from the API on startup, ensuring you always have access to the latest state-of-the-art models without requiring an app update. By default, it natively syncs from the Pollinations AI API, but it will dynamically adapt to any custom provider you configure.
 
-The app works immediately without any configuration. Requests are routed through a secure Cloudflare Worker proxy.
+- **Custom Model:** You can always enter a custom model name manually via the "Custom Model" option in the selection menu.
 
-**Rate Limits:**
-- 100 requests per hour per IP
-- 1,000 requests per day per IP
+## Configuration
 
-**How it works:**
-1. Install the app
-2. Select one or more images
-3. (Optional) Add a custom prompt
-4. Tap **Analyze**
+### API Key & Base URL
 
-### Option 2: Use Your Own API Key
+The app requires an API key to function. You can seamlessly use the default Pollinations AI or any custom provider:
 
-Bring your own Pollinations API key to use your account's limits instead of the shared proxy.
+1. Open Settings (⚙️ icon)
+2. **(Optional)** Enter a custom `Base URL` (e.g., `https://api.openai.com/v1/`) if you want to use a different AI provider.
+3. Enter your API key securely.
+4. Check your balance using the "Balance" button (Note: This button automatically hides if you are using a custom Base URL).
 
-**Setup:**
-1. Get your API key from [Pollinations AI](https://enter.pollinations.ai)
-2. Open the app and tap the **settings icon** (⚙️)
-3. Enter your API key
-4. Tap **Save**
+**Default API URL:** `https://gen.pollinations.ai/v1/`
 
-**Note:** Your usage will be subject to your Pollinations account limits and balance. The app will display your account balance after each analysis.
+### Model Sync
+
+Models are fetched dynamically on startup. To manually sync all available models from the API:
+1. Tap the model icon in the toolbar
+2. Tap the "Sync" button
+3. Synced models automatically persist across app restarts
 
 ## Usage
 
@@ -56,47 +55,11 @@ Bring your own Pollinations API key to use your account's limits instead of the 
 
 **Note:** Multiple images are processed in parallel for faster results. Each image result is clearly separated with headers.
 
-### Switching Models
-
-1. Tap the **model icon** in the toolbar
-2. Choose from: OpenAI, Gemini Flash, Claude Fast, Kimi, or Polly
-3. Selected model applies to all subsequent analyses
-
 ### Changing Theme
 
 1. Tap the **theme icon** in the toolbar
 2. Switches between light and dark mode
 3. Preference is saved automatically
-
-## Architecture
-
-### How the Default API Works
-
-```
-Android App → Cloudflare Worker (Proxy) → Pollinations API
-              ↑ Adds encrypted API key
-              ↑ Enforces rate limits
-```
-
-The Cloudflare Worker acts as a secure proxy that:
-- Stores the API key as an encrypted secret
-- Adds authentication headers to requests
-- Enforces rate limiting per IP address
-- Never exposes the API key to clients
-
-### How Custom API Keys Work
-
-```
-Android App → Pollinations API (Direct)
-              ↑ Uses your API key
-              ↑ Your account limits apply
-```
-
-When you provide your own API key:
-- Requests go directly to Pollinations API
-- Your account balance and limits apply
-- App displays your balance after analysis
-- No rate limiting from the proxy
 
 ## For Developers
 
@@ -113,27 +76,6 @@ When you provide your own API key:
   - Markwon (Markdown rendering)
   - ViewBinding (view access)
 
-### Project Structure
-
-```
-app/src/main/
-├── java/com/aivision/app/
-│   ├── MainActivity.kt          # Main activity with all app logic
-│   ├── AIVisionApp.kt          # Application class for theme persistence
-│   └── ImagePagerAdapter.kt    # ViewPager adapter for multiple images
-├── res/
-│   ├── layout/                 # XML layouts
-│   ├── drawable/               # Icons and graphics
-│   ├── values/                 # Strings, colors, themes
-│   └── menu/                   # Toolbar menu
-└── AndroidManifest.xml
-
-worker/
-├── worker.js                   # Cloudflare Worker proxy with rate limiting
-├── wrangler.toml              # Worker configuration
-└── README.md                  # Detailed worker setup guide
-```
-
 ### Build Commands
 
 ```bash
@@ -147,36 +89,6 @@ worker/
 ./gradlew installDebug
 ```
 
-### Deploy Your Own Proxy
-
-To deploy your own Cloudflare Worker proxy:
-
-```bash
-# Install Wrangler CLI
-npm install -g wrangler
-
-# Login to Cloudflare
-wrangler login
-
-# Navigate to worker directory
-cd worker
-
-# Set your Pollinations API key as a secret
-wrangler secret put POLLINATIONS_API_KEY
-# (Paste your API key when prompted)
-
-# Deploy the worker
-wrangler deploy
-```
-
-After deployment, update `PROXY_URL` in `MainActivity.kt` with your worker URL:
-
-```kotlin
-private const val PROXY_URL = "https://ai-proxy.your-subdomain.workers.dev"
-```
-
-See `worker/README.md` for detailed instructions.
-
 ### CI/CD
 
 GitHub Actions automatically:
@@ -187,43 +99,12 @@ GitHub Actions automatically:
 
 Workflow file: `.github/workflows/build.yml`
 
-## Security
-
-- ✅ API keys stored as encrypted Cloudflare secrets (never in code)
-- ✅ Keys never exposed in APK or network traffic
-- ✅ Rate limiting prevents abuse of default proxy
-- ✅ HTTPS for all API communications
-- ✅ User API keys stored in secure SharedPreferences
-
-## Rate Limiting (Default API Only)
-
-| Limit Type | Value | Scope |
-|------------|-------|-------|
-| Hourly     | 100 requests | Per IP address |
-| Daily      | 1,000 requests | Per IP address |
-
-**Note:** Custom API keys bypass proxy rate limits but are subject to your Pollinations account limits.
-
 ## Permissions
 
 - `INTERNET` - Required for API calls
 - `READ_MEDIA_IMAGES` - Gallery access on Android 13+
 - `READ_EXTERNAL_STORAGE` - Gallery access on Android 12 and below
 
-## Cloudflare Worker Free Tier
-
-The proxy runs on Cloudflare's free tier:
-- 100,000 requests per day
-- 10ms CPU time per request
-- No credit card required
-- No cold starts
-
 ## License
 
 Open source. Use, modify, and distribute freely.
-
-## Credits
-
-- **AI Provider:** [Pollinations AI](https://pollinations.ai)
-- **Proxy Infrastructure:** Cloudflare Workers
-- **UI Framework:** Material Design 3

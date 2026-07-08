@@ -38,10 +38,7 @@ import java.io.ByteArrayOutputStream
 import java.util.concurrent.TimeUnit
 
 class MainActivity : AppCompatActivity() {
-    companion object {
-        private const val PROXY_URL = "https://ai-proxy.universeking.workers.dev"
-    }
-    
+
     private lateinit var binding: ActivityMainBinding
     private var selectedImageUris: MutableList<Uri> = mutableListOf()
     private val prefs by lazy { getSharedPreferences("app_prefs", MODE_PRIVATE) }
@@ -268,8 +265,9 @@ class MainActivity : AppCompatActivity() {
                     
                     showCompletionSnackbar()
                     
-                    // Only show balance for custom API keys
-                    if (apiKey.isNotEmpty()) {
+                    val customEndpoint = prefs.getString("api_endpoint", "") ?: ""
+                    // Only show balance for Pollinations
+                    if (customEndpoint.isEmpty() && apiKey.isNotEmpty()) {
                         kotlinx.coroutines.delay(1500)
                         showBalanceNotification(apiKey)
                     }
@@ -340,7 +338,23 @@ class MainActivity : AppCompatActivity() {
     private fun showApiKeyDialog() {
         val dialogBinding = DialogApiKeyBinding.inflate(layoutInflater)
         val savedKey = prefs.getString("api_key", "") ?: ""
+        val savedEndpoint = prefs.getString("api_endpoint", "") ?: ""
         dialogBinding.apiKeyInput.setText(savedKey)
+        dialogBinding.apiEndpointInput.setText(savedEndpoint)
+        
+        dialogBinding.balanceButton.visibility = if (savedEndpoint.isNotEmpty()) View.GONE else View.VISIBLE
+        dialogBinding.apiEndpointInput.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                dialogBinding.balanceButton.visibility = if (s.isNullOrEmpty()) View.VISIBLE else View.GONE
+            }
+            override fun afterTextChanged(s: android.text.Editable?) {}
+        })
+        
+        dialogBinding.balanceButton.setOnClickListener {
+            val key = dialogBinding.apiKeyInput.text.toString()
+            showBalanceNotification(key)
+        }
         
         val dialog = MaterialAlertDialogBuilder(this)
             .setView(dialogBinding.root)
@@ -380,8 +394,12 @@ class MainActivity : AppCompatActivity() {
         
         dialogBinding.saveButton.setOnClickListener {
             val key = dialogBinding.apiKeyInput.text.toString()
-            prefs.edit().putString("api_key", key).apply()
-            Toast.makeText(this, "API key saved", Toast.LENGTH_SHORT).show()
+            val endpoint = dialogBinding.apiEndpointInput.text.toString()
+            prefs.edit()
+                .putString("api_key", key)
+                .putString("api_endpoint", endpoint)
+                .apply()
+            Toast.makeText(this, "Settings saved", Toast.LENGTH_SHORT).show()
             dialog.dismiss()
         }
         
@@ -469,39 +487,71 @@ class MainActivity : AppCompatActivity() {
         
         kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
             try {
-                val request = okhttp3.Request.Builder()
-                    .url("https://gen.pollinations.ai/models")
-                    .get()
-                    .build()
+                val customEndpoint = prefs.getString("api_endpoint", "") ?: ""
+                val apiKey = prefs.getString("api_key", "") ?: ""
                 
-                httpClient.newCall(request).execute().use { response ->
+                var url = "https://gen.pollinations.ai/models"
+                if (customEndpoint.isNotEmpty()) {
+                    var base = customEndpoint
+                    if (base.endsWith("/chat/completions")) {
+                        base = base.substring(0, base.length - "/chat/completions".length)
+                    }
+                    if (!base.endsWith("/")) base += "/"
+                    url = base + "models"
+                }
+
+                val requestBuilder = okhttp3.Request.Builder().url(url).get()
+                if (customEndpoint.isNotEmpty() && apiKey.isNotEmpty()) {
+                    requestBuilder.addHeader("Authorization", "Bearer $apiKey")
+                }
+                
+                httpClient.newCall(requestBuilder.build()).execute().use { response ->
                     if (response.isSuccessful) {
                         val body = response.body?.string() ?: return@use
-                        val jsonArray = org.json.JSONArray(body)
+                        
+                        val jsonArray = try {
+                            org.json.JSONObject(body).getJSONArray("data")
+                        } catch (e: Exception) {
+                            try {
+                                org.json.JSONArray(body)
+                            } catch (e2: Exception) {
+                                org.json.JSONArray()
+                            }
+                        }
+                        
                         val filteredModels = org.json.JSONArray()
                         
                         for (i in 0 until jsonArray.length()) {
                             val model = jsonArray.getJSONObject(i)
-                            val inputMods = model.getJSONArray("input_modalities")
-                            val outputMods = model.getJSONArray("output_modalities")
-                            val paidOnly = model.optBoolean("paid_only", false)
                             
-                            var hasImageInput = false
-                            var hasTextOutput = false
-                            
-                            for (j in 0 until inputMods.length()) {
-                                if (inputMods.getString(j) == "image") hasImageInput = true
-                            }
-                            for (j in 0 until outputMods.length()) {
-                                if (outputMods.getString(j) == "text") hasTextOutput = true
-                            }
-                            
-                            if (hasImageInput && hasTextOutput && !paidOnly) {
+                            if (customEndpoint.isNotEmpty()) {
                                 val filtered = org.json.JSONObject().apply {
-                                    put("id", model.getString("name"))
-                                    put("name", model.getString("description"))
+                                    put("id", model.getString("id"))
+                                    put("name", model.optString("id", model.getString("id")))
                                 }
                                 filteredModels.put(filtered)
+                            } else {
+                                val inputMods = model.optJSONArray("input_modalities") ?: org.json.JSONArray()
+                                val outputMods = model.optJSONArray("output_modalities") ?: org.json.JSONArray()
+                                val paidOnly = model.optBoolean("paid_only", false)
+                                
+                                var hasImageInput = false
+                                var hasTextOutput = false
+                                
+                                for (j in 0 until inputMods.length()) {
+                                    if (inputMods.getString(j) == "image") hasImageInput = true
+                                }
+                                for (j in 0 until outputMods.length()) {
+                                    if (outputMods.getString(j) == "text") hasTextOutput = true
+                                }
+                                
+                                if (hasImageInput && hasTextOutput && !paidOnly) {
+                                    val filtered = org.json.JSONObject().apply {
+                                        put("id", model.getString("name"))
+                                        put("name", model.getString("description"))
+                                    }
+                                    filteredModels.put(filtered)
+                                }
                             }
                         }
                         
@@ -581,8 +631,9 @@ class MainActivity : AppCompatActivity() {
                     view.layoutParams = params
                     snackbar.show()
                     
-                    // Only show balance for custom API keys
-                    if (apiKey.isNotEmpty()) {
+                    val customEndpoint = prefs.getString("api_endpoint", "") ?: ""
+                    // Only show balance for Pollinations
+                    if (customEndpoint.isEmpty() && apiKey.isNotEmpty()) {
                         kotlinx.coroutines.delay(1500)
                         showBalanceNotification(apiKey)
                     }
@@ -697,11 +748,7 @@ class MainActivity : AppCompatActivity() {
     }
     
     private fun callPollinationsAPI(apiKey: String, base64Image: String, customPrompt: String = ""): String {
-        val client = OkHttpClient.Builder()
-            .connectTimeout(60, TimeUnit.SECONDS)
-            .readTimeout(60, TimeUnit.SECONDS)
-            .build()
-        
+        val customEndpoint = prefs.getString("api_endpoint", "") ?: ""
         val prompt = customPrompt.ifEmpty { "Describe the image" }
         var model = prefs.getString("model", "openai") ?: "openai"
         
@@ -730,20 +777,25 @@ class MainActivity : AppCompatActivity() {
             })
         }
         
-        // Use proxy if no API key provided, otherwise use direct API
-        val url = if (apiKey.isEmpty()) PROXY_URL else "https://gen.pollinations.ai/v1/chat/completions"
+        var url = "https://gen.pollinations.ai/v1/chat/completions"
+        if (customEndpoint.isNotEmpty()) {
+            url = customEndpoint
+            if (!url.endsWith("/chat/completions")) {
+                if (!url.endsWith("/")) url += "/"
+                url += "chat/completions"
+            }
+        }
         
         val requestBuilder = Request.Builder()
             .url(url)
             .addHeader("Content-Type", "application/json")
             .post(json.toString().toRequestBody("application/json".toMediaType()))
         
-        // Only add Authorization header if using user's API key
         if (apiKey.isNotEmpty()) {
             requestBuilder.addHeader("Authorization", "Bearer $apiKey")
         }
         
-        client.newCall(requestBuilder.build()).execute().use { response ->
+        httpClient.newCall(requestBuilder.build()).execute().use { response ->
             if (!response.isSuccessful) throw Exception("API error: ${response.code}")
             val body = response.body?.string() ?: throw Exception("Empty response")
             val jsonResponse = JSONObject(body)
@@ -755,13 +807,7 @@ class MainActivity : AppCompatActivity() {
     }
     
     private fun getApiBalance(apiKey: String): String {
-        // Skip balance check if using default proxy
         if (apiKey.isEmpty()) return "Using default API"
-        
-        val client = OkHttpClient.Builder()
-            .connectTimeout(10, TimeUnit.SECONDS)
-            .readTimeout(10, TimeUnit.SECONDS)
-            .build()
         
         val request = Request.Builder()
             .url("https://gen.pollinations.ai/account/balance")
@@ -769,7 +815,7 @@ class MainActivity : AppCompatActivity() {
             .get()
             .build()
         
-        client.newCall(request).execute().use { response ->
+        httpClient.newCall(request).execute().use { response ->
             if (!response.isSuccessful) return "Unknown"
             val body = response.body?.string() ?: return "Unknown"
             val jsonResponse = JSONObject(body)
